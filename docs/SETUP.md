@@ -56,7 +56,7 @@ You should see `julnow_auth`, `julnow_listing`, `julnow_booking`.
 | Key      | Value               |
 |----------|---------------------|
 | Host     | localhost           |
-| Port     | 5432                |
+| Port     | 5433                |
 | User     | julnow              |
 | Password | julnow_dev_password |
 
@@ -179,4 +179,4 @@ Ask your pair or the leader if you are not sure which code to keep.
 
 - `database "julnow" does not exist`: add `-d postgres` to the psql command.
 - The 3 databases are missing: the init script runs only once. Run `docker compose down -v` and then `docker compose up -d postgres`.
-- `port is already allocated`: another Postgres is using port 5432. Stop it first.
+- `password authentication failed for user "julnow"`: you have another Postgres installed on Windows using port 5432. JulNow uses port 5433, so make sure your config uses 5433.
