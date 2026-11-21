@@ -121,6 +121,35 @@ We use port **5433**, not 5432, so it doesn't clash with a Postgres installed on
 
 This password is for your own computer only. Real passwords go in `.env`, which is never committed.
 
+### A7. Run a service and test it
+
+Each service has its own port:
+
+| Service | Port | Database |
+|---|---|---|
+| Gateway | 8080 | none |
+| Auth | 8081 | `julnow_auth` |
+| Listing | 8082 | `julnow_listing` |
+| Booking | 8083 | `julnow_booking` |
+
+1. Make sure the database is running (A4, `(healthy)`).
+2. In IntelliJ, open the service and its `...Application.java` file.
+3. Click the green ▶ **Run** button at the top right.
+
+✅ Check: the Run tab shows `Started ...Application in X seconds`.
+
+The first run also creates the tables. You will see `Successfully applied N migration`.
+
+Test it (Auth on port 8081 as an example):
+
+```powershell
+Invoke-RestMethod http://localhost:8081/actuator/health
+```
+
+✅ Check: it shows `status : UP`.
+
+To stop the service, click the red ■ **Stop** button.
+
 ---
 
 ## Part B: Daily work
@@ -284,3 +313,5 @@ Not sure which code to keep? Ask your pair or the leader before committing.
 | Maven: `Could not transfer artifact ... from/to central` | Internet dropped. Click **Reload All Maven Projects** in the Maven panel. |
 | Flyway: `checksum mismatch` | Someone edited an old `V..sql` file. Undo that edit and add a new `V..sql` instead. |
 | `git branch -d` says "not fully merged" | Use `git branch -D` after a Squash merge (see C7). |
+| `gh pr create` says "you must first push the current branch" | Add `--head <branch-name>` to the command. |
+| A Spring class does nothing (no error, but no effect) | It is in the wrong package. Every class must be inside the main package, for example `com.julnow.auth.config`, not `config`. |
