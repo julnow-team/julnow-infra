@@ -137,6 +137,12 @@ Run these from `D:\julnow\julnow-infra`.
 | Reset everything (deletes all data) | `docker compose down -v` |
 
 Docker Desktop must be open before any of these.
+| Key      | Value               |
+|----------|---------------------|
+| Host     | localhost           |
+| Port     | 5433                |
+| User     | julnow              |
+| Password | julnow_dev_password |
 
 ---
 
@@ -284,3 +290,15 @@ Not sure which code to keep? Ask your pair or the leader before committing.
 | Maven: `Could not transfer artifact ... from/to central` | Internet dropped. Click **Reload All Maven Projects** in the Maven panel. |
 | Flyway: `checksum mismatch` | Someone edited an old `V..sql` file. Undo that edit and add a new `V..sql` instead. |
 | `git branch -d` says "not fully merged" | Use `git branch -D` after a Squash merge (see C7). |
+2. Keep PRs small, 1 to 2 days of work.
+3. Pull often. Do not work on week-old code.
+4. Tell the group before editing shared files (`application.yml`, `pubspec.yaml`, `docker-compose.yml`).
+5. Never commit `.env`, passwords or build folders.
+6. After merging something important, tell the group: "Merged X, please pull".
+7. Merge with **Squash and merge** only.
+
+## Common problems
+
+- `database "julnow" does not exist`: add `-d postgres` to the psql command.
+- The 3 databases are missing: the init script runs only once. Run `docker compose down -v` and then `docker compose up -d postgres`.
+- `password authentication failed for user "julnow"`: you have another Postgres installed on Windows using port 5432. JulNow uses port 5433, so make sure your config uses 5433.
