@@ -29,6 +29,7 @@ After each step, check the ✅ line. If it doesn't match, look at Part E or ask 
 | IntelliJ IDEA | https://www.jetbrains.com/idea |
 | Android Studio | https://developer.android.com/studio |
 | Flutter SDK | https://docs.flutter.dev/get-started/install |
+| Node.js 22 LTS | `winget install OpenJS.NodeJS.LTS` (for the admin web) |
 
 **Free IntelliJ license:** apply at https://www.jetbrains.com/community/education with your `@rupp.edu.kh` email. Then in IntelliJ: **Help → Register → Log in to JetBrains Account → Activate**.
 
@@ -41,6 +42,7 @@ git --version
 gh --version
 docker --version
 flutter --version
+node --version
 $PSVersionTable.PSVersion.Major
 ```
 
@@ -223,6 +225,33 @@ cd D:\julnow\julnow-infra
 docker compose exec postgres psql -U julnow -d julnow_auth -c "\dt"
 ```
 
+### A10. Run the admin web
+
+The admin web is a React app (Vite + Tailwind). It has no database and no Java: it calls the Gateway, like the mobile app.
+
+1. Start the database (A4), the gateway and the services you need (A7).
+2. The first time, create `.env.local` in the repo folder with one line:
+
+```
+VITE_API_URL=http://localhost:8080
+```
+
+`.env.local` is never committed.
+
+3. Install and run:
+
+```powershell
+cd D:\julnow\julnow-admin-web
+npm install
+npm run dev
+```
+
+✅ Check: open http://localhost:5173 and the admin login page shows.
+
+While it runs, the page reloads by itself when you save a file. Press `Ctrl+C` in the terminal to stop.
+
+Run `npm install` again after a pull that changes `package.json`.
+
 ---
 
 ## Part B: Daily work
@@ -245,7 +274,7 @@ Run these from `D:\julnow\julnow-infra`. Docker Desktop must be open.
 1. Open Docker Desktop, then start the database.
 2. Pull the latest code (C1).
 3. Run the services you need in IntelliJ (A7).
-4. Run the app if you work on mobile (A8).
+4. Run the app if you work on mobile (A8), or `npm run dev` if you work on the admin web (A10).
 5. At the end of the day: push your work (C3), stop the services, `docker compose stop`.
 
 ---
@@ -406,7 +435,7 @@ Not sure which code to keep? Ask your pair or the leader before committing.
 | Auth | 8081 | `julnow_auth` |
 | Listing | 8082 | `julnow_listing` |
 | Booking | 8083 | `julnow_booking` |
-| Admin web | 8090 | none (calls the Gateway) |
+| Admin web | 5173 | none (calls the Gateway) |
 | PostgreSQL | 5433 | all 3 |
 
 ### D2. Database changes (Flyway)
@@ -429,6 +458,7 @@ Mobile app / Admin web  →  Gateway (8080)  →  Auth / Listing / Booking
 - The app and the admin web call **only the Gateway**, never a service port directly.
 - A service never reads another service's database. If it needs data from another service, it calls that service's API.
 - From the Android emulator, your computer is `10.0.2.2`, not `localhost`.
+- The gateway allows the admin web at `http://localhost:5173` (CORS). Services do not need CORS.
 
 ### D4. Folder structure
 
@@ -454,11 +484,25 @@ lib/
     └── <feature>/presentation/   screens for that feature
 ```
 
+**Admin web (React).** Shared parts first, pages put them together:
+
+```
+src/
+├── api/          calls to the Gateway
+├── components/   shared UI: Button, Badge, Table, Dialog, Sidebar
+├── pages/        one folder per screen: overview, users, listings ...
+├── lib/          helpers: login token, money and date format
+└── styles/       tokens.css (colours and spacing from Figma)
+```
+
+Use the colours from `tokens.css` through Tailwind. Do not write hex colours in a page.
+
 ### D5. Code style
 
 - Write code that is simple and easy for teammates to read.
 - Only add short comments where the code is not obvious.
 - Follow the structure that is already in the repo.
+- React: function components only. Keep the login token in memory, never in `localStorage`.
 - Widgets: start with `StatelessWidget`. Use `ConsumerWidget` when you need a Riverpod provider. Use `StatefulWidget` only when you need a controller or `dispose()`.
 
 ---
@@ -482,3 +526,6 @@ lib/
 | `git branch -d` says "not fully merged" | Use `git branch -D` after a Squash merge (C7). |
 | `gh pr create` says "you must first push the current branch" | Add `--head <branch-name>`. |
 | You committed on `main` by mistake | Don't push. Ask the leader. |
+| `npm` is not recognized | Install Node.js (A1), then open a new terminal. |
+| Admin web: `blocked by CORS policy` in the browser console | The gateway must allow `http://localhost:5173`. Pull the latest julnow-gateway and restart it. |
+| Admin web shows a blank page | Check `.env.local` (A10) and look at the browser console (F12). |
