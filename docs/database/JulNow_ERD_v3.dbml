@@ -1,0 +1,492 @@
+// JulNow ERD v3 (paste into dbdiagram.io)
+// One Postgres server, 3 databases. Schema prefix = database. No FK between databases.
+// Fixed values are VARCHAR + CHECK in SQL; allowed values are in each note.
+
+TableGroup auth [note: "julnow_auth (julnow-auth-service, port 8081)"] {
+  auth.users
+  auth.user_settings
+  auth.otp_codes
+  auth.refresh_tokens
+  auth.plans
+  auth.subscriptions
+  auth.invoices
+  auth.user_blocks
+  auth.reports
+  auth.admin_roles
+  auth.audit_logs
+  auth.app_settings
+}
+
+TableGroup listing [note: "julnow_listing (julnow-listing-service, port 8082)"] {
+  listing.categories
+  listing.subcategories
+  listing.listings
+  listing.property_details
+  listing.vehicle_details
+  listing.listing_photos
+  listing.amenities
+  listing.listing_amenities
+  listing.nearby_places
+  listing.wishlists
+  listing.reviews
+  listing.listing_flags
+  listing.moderation_logs
+  listing.listing_view_stats
+}
+
+TableGroup booking [note: "julnow_booking (julnow-booking-service, port 8083)"] {
+  booking.bookings
+  booking.conversations
+  booking.conversation_members
+  booking.messages
+  booking.notifications
+  booking.leases
+  booking.rent_bills
+}
+
+Table auth.users [headercolor: #6D28D9] {
+  id bigint [pk, increment, note: 'User identifier']
+  full_name varchar(100) [not null, note: 'Users full name']
+  email varchar(150) [not null, unique, note: 'Users email address (login)']
+  phone varchar(25) [unique, note: 'Users phone number (login)']
+  password_hash varchar(255) [not null, note: 'BCrypt hash of the password']
+  role varchar(20) [not null, default: 'TENANT', note: 'Role. A user becomes OWNER after Upgrade to Business | TENANT / OWNER / ADMIN']
+  status varchar(20) [not null, default: 'ACTIVE', note: 'Account status | ACTIVE / SUSPENDED / DELETED']
+  email_verified boolean [not null, default: false, note: 'Email confirmed by OTP']
+  phone_verified boolean [not null, default: false, note: 'Phone confirmed by OTP']
+  avatar_url varchar(500) [note: 'Profile photo link']
+  location varchar(150) [note: 'Users location (city, country)']
+  bio text [note: 'Short profile description']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  updated_at timestamptz [not null, default: `now()`, note: 'Date and time of the last change']
+  last_login_at timestamptz [note: 'Last successful login (Admin > Users) | NEW in v3']
+  admin_role_code varchar(30) [note: 'Admin role, only when role = ADMIN (P3) | NEW in v3']
+  Note: 'Every account: tenant, owner and admin. FR-02, FR-03, FR-12, FR-18'
+}
+
+Table auth.user_settings [headercolor: #6D28D9] {
+  user_id bigint [pk, note: 'User id']
+  language varchar(5) [not null, default: 'en', note: 'App language | en / km / zh']
+  currency varchar(3) [not null, default: 'USD', note: 'Display currency | USD / KHR']
+  dark_mode boolean [not null, default: true, note: 'Dark mode on or off']
+  notify_push boolean [not null, default: true, note: 'Receive push notifications']
+  notify_email boolean [not null, default: true, note: 'Receive email notifications']
+  updated_at timestamptz [not null, default: `now()`, note: 'Date and time of the last change']
+  Note: 'One row per user, created with the account. FR-11'
+}
+
+Table auth.otp_codes [headercolor: #6D28D9] {
+  id bigint [pk, increment, note: 'OTP code identifier']
+  user_id bigint [not null, note: 'User id']
+  purpose varchar(20) [not null, note: 'Why the code was sent | VERIFY_ACCOUNT / RESET_PASSWORD / ADMIN_MFA']
+  channel varchar(10) [not null, note: 'How the code was sent | EMAIL / SMS']
+  destination varchar(150) [not null, note: 'Email or phone the code was sent to']
+  code_hash varchar(255) [not null, note: 'Hash of the 6-digit code']
+  attempts int [not null, default: 0, note: 'Number of wrong tries']
+  expires_at timestamptz [not null, note: 'Code expiry time (created_at + 5 minutes)']
+  used_at timestamptz [note: 'Time the code was used']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  Note: '6-digit codes, valid 5 minutes. Only the hash is stored. FR-04, FR-16'
+}
+
+Table auth.refresh_tokens [headercolor: #6D28D9] {
+  id bigint [pk, increment, note: 'Refresh token identifier']
+  user_id bigint [not null, note: 'User id']
+  token_hash varchar(255) [not null, unique, note: 'Hash of the refresh token (never the token itself)']
+  device varchar(100) [note: 'Device or browser name']
+  expires_at timestamptz [not null, note: 'Session end (longer when Remember me is on)']
+  revoked_at timestamptz [note: 'Time the session was signed out']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  Note: '[P2] NEW in v3. Login sessions: Remember me, sign out, session timeout. FR-03, FR-16'
+}
+
+Table auth.plans [headercolor: #6D28D9] {
+  code varchar(10) [pk, note: 'Plan code | TRIAL / STARTER / PRO']
+  name varchar(50) [not null, note: 'Plan name']
+  price_monthly numeric(10,2) [not null, note: 'Monthly price in USD (Trial 0, Starter 15, Pro 29)']
+  price_yearly numeric(10,2) [note: 'Yearly price in USD (Pro 290)']
+  max_active_listings int [not null, note: 'Active listings allowed (Trial 5, Starter 5, Pro 10)']
+  trial_days int [not null, default: 0, note: 'Free trial length in days (Trial 14)']
+  priority_placement boolean [not null, default: false, note: 'Listings shown first in search']
+  analytics boolean [not null, default: false, note: 'Advanced analytics included']
+  Note: 'Seed data: 3 plans. Settings > Upgrade to Business. FR-12, FR-20'
+}
+
+Table auth.subscriptions [headercolor: #6D28D9] {
+  id bigint [pk, increment, note: 'Subscription identifier']
+  user_id bigint [not null, note: 'Owners user id']
+  plan_code varchar(10) [not null, note: 'Plan code']
+  status varchar(20) [not null, note: 'Subscription status | TRIALING / ACTIVE / PAST_DUE / CANCELLED / EXPIRED']
+  started_at timestamptz [not null, note: 'Subscription start time']
+  current_period_end timestamptz [not null, note: 'End of the current trial or paid period']
+  cancel_at_period_end boolean [not null, default: false, note: 'Stop at the end of the period']
+  grace_until timestamptz [note: 'Late payment: 3 days to pay before listings pause | NEW in v3']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  Note: 'Owner plan. MVP uses Trial only, no real payment. FR-12, FR-20'
+}
+
+Table auth.invoices [headercolor: #6D28D9] {
+  id bigint [pk, increment, note: 'Invoice identifier']
+  subscription_id bigint [not null, note: 'Subscription id']
+  amount numeric(10,2) [not null, note: 'Amount in USD']
+  status varchar(10) [not null, note: 'Payment status | PENDING / PAID / FAILED / REFUNDED']
+  attempt_count smallint [not null, default: 0, note: 'Charge retries (up to 3)']
+  period_start date [not null, note: 'Billing period start']
+  period_end date [not null, note: 'Billing period end']
+  paid_at timestamptz [note: 'Payment time']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  Note: '[Later] NEW in v3. Subscription payments and retries. Needed for revenue KPIs. FR-17, FR-20'
+}
+
+Table auth.user_blocks [headercolor: #6D28D9] {
+  blocker_id bigint [not null, note: 'User who blocks']
+  blocked_id bigint [not null, note: 'User who is blocked']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  indexes {
+    (blocker_id, blocked_id) [pk]
+  }
+  Note: '[P3] View profile > Block. FR-11'
+}
+
+Table auth.reports [headercolor: #6D28D9] {
+  id bigint [pk, increment, note: 'Report identifier']
+  reporter_id bigint [not null, note: 'User who sends the report']
+  target_type varchar(10) [not null, note: 'Reported object type | USER / LISTING']
+  target_id bigint [not null, note: 'Id of the reported user or listing | FK* users or listings (no FK)']
+  reason varchar(20) [not null, note: 'Report reason | SCAM / FAKE_PHOTOS / WRONG_PRICE / ABUSE / OTHER']
+  details text [note: 'Extra details written by the reporter']
+  status varchar(20) [not null, default: 'OPEN', note: 'Case status | OPEN / REVIEWING / ESCALATED / RESOLVED / DISMISSED']
+  action_taken varchar(20) [note: 'Admin action when the case is closed | NONE / PAUSE_LISTING / SUSPEND_OWNER | NEW in v3']
+  handled_by bigint [note: 'Admin who handled the case']
+  resolution_note text [note: 'Admin decision note']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  Note: '[P3] Report a user or listing; Admin Reports & Risk. FR-11, FR-21'
+}
+
+Table auth.admin_roles [headercolor: #6D28D9] {
+  code varchar(30) [pk, note: 'Role code (SUPER_ADMIN, OPERATIONS, SUPPORT)']
+  name varchar(50) [not null, note: 'Role name']
+  permissions text [not null, note: 'Allowed actions, comma separated (e.g. USERS_SUSPEND,LISTINGS_REVIEW)']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  Note: '[P3] NEW in v3. Admin roles and permissions. FR-22'
+}
+
+Table auth.audit_logs [headercolor: #6D28D9] {
+  id bigint [pk, increment, note: 'Audit log identifier']
+  admin_id bigint [not null, note: 'Admin who did the action']
+  action varchar(50) [not null, note: 'SUSPEND_USER, APPROVE_LISTING, REJECT_LISTING, CHANGE_PLAN ...']
+  target_type varchar(20) [not null, note: 'Type of object the action was on | USER / LISTING / BOOKING / SUBSCRIPTION / REPORT']
+  target_id bigint [not null, note: 'Id of the object in its own service | FK* see target_type (no FK)']
+  detail text [note: 'Reason or before/after summary']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  Note: '[P3] Every admin action. Never updated or deleted. FR-22'
+}
+
+Table auth.app_settings [headercolor: #6D28D9] {
+  key varchar(50) [pk, note: 'Setting name (e.g. KHR_PER_USD, SESSION_TIMEOUT_MIN)']
+  value varchar(255) [not null, note: 'Setting value']
+  updated_by bigint [note: 'Admin who changed it']
+  updated_at timestamptz [not null, default: `now()`, note: 'Date and time of the last change']
+  Note: '[Later] NEW in v3. Platform settings (Admin > Settings). FR-22'
+}
+
+Table listing.categories [headercolor: #0F766E] {
+  id smallint [pk, note: 'Category identifier']
+  code varchar(20) [not null, unique, note: 'Category code | RENTAL / STAY / TRAVEL']
+  name varchar(50) [not null, note: 'Category name']
+  icon varchar(100) [note: 'Icon name']
+  sort_order smallint [not null, default: 0, note: 'Display order']
+  Note: 'Seed data: Rental, Stay, Travel. FR-01, FR-05'
+}
+
+Table listing.subcategories [headercolor: #0F766E] {
+  id smallint [pk, note: 'Subcategory identifier']
+  category_id smallint [not null, note: 'Category id']
+  code varchar(20) [not null, unique, note: 'Subcategory code for the API (ROOM, HOTEL, MOTO ...) | NEW in v3']
+  name varchar(50) [not null, note: 'Subcategory name']
+  default_price_unit varchar(10) [not null, note: 'Default price unit (Rental MONTH, Stay NIGHT, Travel DAY) | HOUR / DAY / NIGHT / MONTH']
+  Note: 'Seed data: 9 subtypes. FR-01, FR-05'
+}
+
+Table listing.listings [headercolor: #0F766E] {
+  id bigint [pk, increment, note: 'Listing identifier']
+  owner_id bigint [not null, note: 'Owners user id | FK* users (auth) (no FK)']
+  subcategory_id smallint [not null, note: 'Subcategory id']
+  title varchar(150) [not null, note: 'Listing title']
+  description text [not null, note: 'Full description']
+  price numeric(12,2) [not null, note: 'Price per unit in USD']
+  price_unit varchar(10) [not null, note: 'Price unit | HOUR / DAY / NIGHT / MONTH']
+  discount_type varchar(10) [not null, default: 'NONE', note: 'Discount type | NONE / PERCENT / AMOUNT']
+  discount_value numeric(12,2) [not null, default: 0, note: 'Discount value (% or $)']
+  fee_type varchar(10) [not null, default: 'NONE', note: 'Taxes & fees set by the owner | NONE / PERCENT / AMOUNT | NEW in v3']
+  fee_value numeric(12,2) [not null, default: 0, note: 'Taxes & fees value (% or $), shown before Confirm & Pay | NEW in v3']
+  max_guests smallint [note: 'Maximum number of guests']
+  province varchar(50) [not null, note: 'Province or city (search filter)']
+  area varchar(100) [note: 'District or area']
+  address varchar(255) [note: 'Street address']
+  latitude numeric(9,6) [note: 'Map latitude']
+  longitude numeric(9,6) [note: 'Map longitude']
+  contact_name varchar(100) [note: 'Contact person name']
+  contact_phone varchar(60) [note: 'Contact phone number(s)']
+  contact_email varchar(150) [note: 'Contact email']
+  contact_telegram varchar(150) [note: 'Telegram link or username']
+  status varchar(20) [not null, default: 'PENDING_REVIEW', note: 'Listing status | PENDING_REVIEW / ACTIVE / CHANGES_REQUESTED / REJECTED / PAUSED']
+  availability varchar(10) [not null, default: 'AVAILABLE', note: 'Availability | AVAILABLE / OCCUPIED']
+  is_featured boolean [not null, default: false, note: 'Shown in Featured properties']
+  view_count int [not null, default: 0, note: 'Total views']
+  rating_avg numeric(2,1) [not null, default: 0, note: 'Average rating (0-5)']
+  rating_count int [not null, default: 0, note: 'Number of reviews']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  updated_at timestamptz [not null, default: `now()`, note: 'Date and time of the last change']
+  Note: 'Shared fields of every listing. FR-01, FR-05, FR-06, FR-14'
+}
+
+Table listing.property_details [headercolor: #0F766E] {
+  listing_id bigint [pk, note: 'Listing id']
+  bedrooms smallint [note: 'Number of bedrooms']
+  bathrooms smallint [note: 'Number of bathrooms']
+  size_m2 numeric(8,2) [note: 'Size in square metres']
+  floor varchar(20) [note: 'Floor (e.g. 12th, G)']
+  facing varchar(20) [note: 'Direction the unit faces']
+  furnished varchar(10) [note: 'Furnished level | FULL / PARTLY / NONE']
+  building_age_years smallint [note: 'Building age in years']
+  pet_friendly boolean [note: 'Pets allowed']
+  bed_type varchar(50) [note: 'Bed type (e.g. 1 King Bed)']
+  Note: 'Only for RENTAL and STAY listings. FR-06, FR-14'
+}
+
+Table listing.vehicle_details [headercolor: #0F766E] {
+  listing_id bigint [pk, note: 'Listing id']
+  make varchar(50) [note: 'Vehicle brand (Honda, Toyota)']
+  model varchar(50) [note: 'Vehicle model (PCX, Click)']
+  year smallint [note: 'Vehicle year']
+  spec varchar(255) [note: 'Engine or technical spec']
+  Note: 'Only for TRAVEL listings. FR-06, FR-14'
+}
+
+Table listing.listing_photos [headercolor: #0F766E] {
+  id bigint [pk, increment, note: 'Photo identifier']
+  listing_id bigint [not null, note: 'Listing id']
+  url varchar(500) [not null, note: 'Photo link']
+  content_hash varchar(64) [note: 'SHA-256 of the image, used to find duplicate photos | NEW in v3']
+  sort_order smallint [not null, note: 'Display order (0 = cover)']
+  indexes {
+    (listing_id, sort_order) [unique]
+  }
+  Note: 'Up to 10 photos, sort_order 0 is the cover. FR-06, FR-14'
+}
+
+Table listing.amenities [headercolor: #0F766E] {
+  id smallint [pk, note: 'Amenity identifier']
+  name varchar(50) [not null, unique, note: 'Amenity name']
+  icon varchar(100) [note: 'Icon name']
+  Note: 'Seed data: Wifi, AC, Pool .... FR-06'
+}
+
+Table listing.listing_amenities [headercolor: #0F766E] {
+  listing_id bigint [not null, note: 'Listing id']
+  amenity_id smallint [not null, note: 'Amenity id']
+  indexes {
+    (listing_id, amenity_id) [pk]
+  }
+  Note: 'Which amenities a listing has. FR-06, FR-14'
+}
+
+Table listing.nearby_places [headercolor: #0F766E] {
+  id bigint [pk, increment, note: 'Nearby place identifier']
+  listing_id bigint [not null, note: 'Listing id']
+  name varchar(100) [not null, note: 'Place name (e.g. AEON Mall)']
+  distance_km numeric(5,2) [note: 'Distance in km']
+  travel_minutes smallint [note: 'Travel time in minutes']
+  Note: '[P2] Listing detail > Location > Nearby places. FR-06'
+}
+
+Table listing.wishlists [headercolor: #0F766E] {
+  user_id bigint [not null, note: 'User id | FK* users (auth) (no FK)']
+  listing_id bigint [not null, note: 'Listing id']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  indexes {
+    (user_id, listing_id) [pk]
+  }
+  Note: '[P2] Saved listings, grouped by category. FR-07'
+}
+
+Table listing.reviews [headercolor: #0F766E] {
+  id bigint [pk, increment, note: 'Review identifier']
+  listing_id bigint [not null, note: 'Listing id']
+  user_id bigint [not null, note: 'User id | FK* users (auth) (no FK)']
+  booking_id bigint [note: 'Booking the review is for | FK* bookings (booking) (no FK)']
+  rating smallint [not null, note: 'Rating from 1 to 5']
+  comment text [note: 'Review text']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  indexes {
+    (listing_id, user_id) [unique]
+  }
+  Note: '[P2] Review & Rating on listing detail. FR-06'
+}
+
+Table listing.listing_flags [headercolor: #0F766E] {
+  id bigint [pk, increment, note: 'Flag identifier']
+  listing_id bigint [not null, note: 'Listing id']
+  flag_type varchar(20) [not null, note: 'Check that failed | DUPLICATE_PHOTOS / PRICE_TOO_HIGH / BANNED_PHONE']
+  detail varchar(255) [note: 'Why it was flagged (e.g. price 45% above area average)']
+  resolved boolean [not null, default: false, note: 'Flag has been checked by an admin']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  Note: 'System checks before publishing. FR-19'
+}
+
+Table listing.moderation_logs [headercolor: #0F766E] {
+  id bigint [pk, increment, note: 'Moderation log identifier']
+  listing_id bigint [not null, note: 'Listing id']
+  admin_id bigint [not null, note: 'Admins user id | FK* users (auth) (no FK)']
+  action varchar(20) [not null, note: 'Admin decision | APPROVE / REQUEST_CHANGES / REJECT / PAUSE']
+  reason text [note: 'Reason sent to the owner']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  Note: 'Admin decisions on listings. FR-19'
+}
+
+Table listing.listing_view_stats [headercolor: #0F766E] {
+  listing_id bigint [not null, note: 'Listing id']
+  day date [not null, note: 'Day']
+  views int [not null, default: 0, note: 'Views on that day']
+  indexes {
+    (listing_id, day) [pk]
+  }
+  Note: '[P2] NEW in v3. Views per listing per day, for the Owner Dashboard chart. FR-13'
+}
+
+Table booking.bookings [headercolor: #B45309] {
+  id bigint [pk, increment, note: 'Booking identifier']
+  booking_code varchar(20) [not null, unique, note: 'Booking number shown to the user (#KH-230805)']
+  listing_id bigint [not null, note: 'Listing id | FK* listings (listing) (no FK)']
+  tenant_id bigint [not null, note: 'Tenants user id | FK* users (auth) (no FK)']
+  owner_id bigint [not null, note: 'Owners user id, copied from the listing | FK* users (auth) (no FK)']
+  listing_title varchar(150) [not null, note: 'Listing title at booking time']
+  category_code varchar(20) [not null, note: 'Category at booking time | RENTAL / STAY / TRAVEL']
+  unit_label varchar(50) [note: 'Room or unit (e.g. Room 205)']
+  start_date date [not null, note: 'Check-in / pick-up date']
+  end_date date [not null, note: 'Check-out / return date']
+  adults smallint [not null, default: 1, note: 'Number of adults']
+  children smallint [not null, default: 0, note: 'Number of children']
+  guest_name varchar(100) [not null, note: 'Guest name']
+  guest_email varchar(150) [note: 'Guest email']
+  guest_phone varchar(25) [note: 'Guest phone']
+  unit_price numeric(12,2) [not null, note: 'Price per unit at booking time']
+  price_unit varchar(10) [not null, note: 'Price unit at booking time | HOUR / DAY / NIGHT / MONTH']
+  quantity smallint [not null, note: 'Number of nights / days / months']
+  subtotal numeric(12,2) [not null, note: 'Unit price x quantity']
+  discount_amount numeric(12,2) [not null, default: 0, note: 'Discount in USD']
+  taxes_fees numeric(12,2) [not null, default: 0, note: 'Owners taxes and fees in USD']
+  total numeric(12,2) [not null, note: 'Amount to pay = subtotal - discount + taxes']
+  payment_method varchar(20) [not null, default: 'PAY_AT_PROPERTY', note: 'Payment method (KHQR is mock) | PAY_AT_PROPERTY / KHQR']
+  payment_status varchar(10) [not null, default: 'UNPAID', note: 'Payment status | UNPAID / PAID / REFUNDED']
+  policy_snapshot text [note: 'Cancellation policy at booking time']
+  status varchar(20) [not null, default: 'CONFIRMED', note: 'Booking status | PENDING / CONFIRMED / CHECKED_IN / COMPLETED / CANCELLED']
+  checked_in_at timestamptz [note: 'Check-in time (QR scan)']
+  cancelled_at timestamptz [note: 'Cancellation time']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  Note: 'Booking with price snapshot, so later listing edits do not change it. FR-09, FR-10, FR-13'
+}
+
+Table booking.conversations [headercolor: #B45309] {
+  id bigint [pk, increment, note: 'Conversation identifier']
+  type varchar(10) [not null, default: 'DIRECT', note: 'Chat type | DIRECT / GROUP']
+  name varchar(100) [note: 'Group chat name (GROUP only)']
+  listing_id bigint [note: 'Listing the chat is about | FK* listings (listing) (no FK)']
+  created_by bigint [not null, note: 'User who started the chat | FK* users (auth) (no FK)']
+  last_message_at timestamptz [note: 'Time of the newest message']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  Note: '[P3] Chat between tenant and owner. FR-08'
+}
+
+Table booking.conversation_members [headercolor: #B45309] {
+  conversation_id bigint [not null, note: 'Conversation id']
+  user_id bigint [not null, note: 'User id | FK* users (auth) (no FK)']
+  last_read_at timestamptz [note: 'Last time the member read the chat (unread badge)']
+  joined_at timestamptz [not null, default: `now()`, note: 'Time the member joined']
+  indexes {
+    (conversation_id, user_id) [pk]
+  }
+  Note: '[P3] Who is in each chat. FR-08'
+}
+
+Table booking.messages [headercolor: #B45309] {
+  id bigint [pk, increment, note: 'Message identifier']
+  conversation_id bigint [not null, note: 'Conversation id']
+  sender_id bigint [not null, note: 'User who sent it | FK* users (auth) (no FK)']
+  body text [note: 'Message text']
+  shared_listing_id bigint [note: 'Listing card shared in chat | FK* listings (listing) (no FK)']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  Note: '[P3] Chat messages, text or a shared listing card. FR-08'
+}
+
+Table booking.notifications [headercolor: #B45309] {
+  id bigint [pk, increment, note: 'Notification identifier']
+  user_id bigint [not null, note: 'User id | FK* users (auth) (no FK)']
+  type varchar(40) [not null, note: 'BOOKING_CONFIRMED, LISTING_APPROVED, LISTING_REJECTED, NEW_MESSAGE ...']
+  title varchar(150) [not null, note: 'Notification title']
+  body varchar(500) [note: 'Notification text']
+  related_type varchar(20) [note: 'Type of linked object | BOOKING / LISTING / CONVERSATION']
+  related_id bigint [note: 'Id of the linked object']
+  is_read boolean [not null, default: false, note: 'Notification has been read']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  Note: '[P2] In-app notifications. Other services create them through the API. FR-10'
+}
+
+Table booking.leases [headercolor: #B45309] {
+  id bigint [pk, increment, note: 'Lease identifier']
+  owner_id bigint [not null, note: 'Owners user id | FK* users (auth) (no FK)']
+  listing_id bigint [not null, note: 'Listing id | FK* listings (listing) (no FK)']
+  tenant_user_id bigint [note: 'Tenants user id (if on JulNow) | FK* users (auth) (no FK)']
+  tenant_name varchar(100) [not null, note: 'Tenant name']
+  unit_label varchar(50) [note: 'Room or unit (e.g. Room 007)']
+  monthly_rent numeric(12,2) [not null, note: 'Rent per month in USD']
+  lease_start date [not null, note: 'Lease start date']
+  lease_end date [note: 'Lease end date']
+  created_at timestamptz [not null, default: `now()`, note: 'Date and time the record was created']
+  Note: '[P3] Tenant Roster: long-term tenants of an owner. FR-15'
+}
+
+Table booking.rent_bills [headercolor: #B45309] {
+  id bigint [pk, increment, note: 'Rent bill identifier']
+  lease_id bigint [not null, note: 'Lease id']
+  period_month date [not null, note: 'Billing month (first day)']
+  amount numeric(12,2) [not null, note: 'Bill amount in USD']
+  status varchar(10) [not null, default: 'UNPAID', note: 'Payment status | UNPAID / PAID / REFUNDED']
+  khqr_payload text [note: 'KHQR string for payment']
+  paid_at timestamptz [note: 'Payment time']
+  indexes {
+    (lease_id, period_month) [unique]
+  }
+  Note: '[Later] Monthly rent bills sent by KHQR. FR-15'
+}
+
+Ref: auth.users.admin_role_code > auth.admin_roles.code
+Ref: auth.user_settings.user_id - auth.users.id
+Ref: auth.otp_codes.user_id > auth.users.id
+Ref: auth.refresh_tokens.user_id > auth.users.id
+Ref: auth.subscriptions.user_id > auth.users.id
+Ref: auth.subscriptions.plan_code > auth.plans.code
+Ref: auth.invoices.subscription_id > auth.subscriptions.id
+Ref: auth.user_blocks.blocker_id > auth.users.id
+Ref: auth.user_blocks.blocked_id > auth.users.id
+Ref: auth.reports.reporter_id > auth.users.id
+Ref: auth.reports.handled_by > auth.users.id
+Ref: auth.audit_logs.admin_id > auth.users.id
+Ref: auth.app_settings.updated_by > auth.users.id
+Ref: listing.subcategories.category_id > listing.categories.id
+Ref: listing.listings.subcategory_id > listing.subcategories.id
+Ref: listing.property_details.listing_id - listing.listings.id
+Ref: listing.vehicle_details.listing_id - listing.listings.id
+Ref: listing.listing_photos.listing_id > listing.listings.id
+Ref: listing.listing_amenities.listing_id > listing.listings.id
+Ref: listing.listing_amenities.amenity_id > listing.amenities.id
+Ref: listing.nearby_places.listing_id > listing.listings.id
+Ref: listing.wishlists.listing_id > listing.listings.id
+Ref: listing.reviews.listing_id > listing.listings.id
+Ref: listing.listing_flags.listing_id > listing.listings.id
+Ref: listing.moderation_logs.listing_id > listing.listings.id
+Ref: listing.listing_view_stats.listing_id > listing.listings.id
+Ref: booking.conversation_members.conversation_id > booking.conversations.id
+Ref: booking.messages.conversation_id > booking.conversations.id
+Ref: booking.rent_bills.lease_id > booking.leases.id
