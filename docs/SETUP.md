@@ -29,7 +29,7 @@ After each step, check the ✅ line. If it doesn't match, look at Part E or ask 
 | IntelliJ IDEA | https://www.jetbrains.com/idea |
 | Android Studio | https://developer.android.com/studio |
 | Flutter SDK | https://docs.flutter.dev/get-started/install |
-| Node.js 22 LTS | `winget install OpenJS.NodeJS.LTS` (for the admin web) |
+| Node.js LTS | `winget install OpenJS.NodeJS.LTS` (for the admin web) |
 
 **Free IntelliJ license:** apply at https://www.jetbrains.com/community/education with your `@rupp.edu.kh` email. Then in IntelliJ: **Help → Register → Log in to JetBrains Account → Activate**.
 
